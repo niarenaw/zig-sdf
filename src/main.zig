@@ -5,23 +5,9 @@ const sdf = @import("sdf.zig");
 const render = @import("render.zig");
 const terminal = @import("terminal.zig");
 
-/// Scene SDF: a unit sphere at the origin.
-fn sceneSphere(p: Vec3) f32 {
-    return sdf.sphere(p, 1.0);
-}
-
-/// Scene SDF: a box at the origin (for testing shape swap).
-fn sceneBox(p: Vec3) f32 {
-    return sdf.box(p, v.vec3(0.8, 0.8, 0.8));
-}
-
-/// Scene SDF: box on a plane (for testing AO and shadows).
-fn sceneBoxOnPlane(p: Vec3) f32 {
-    const box_pos = p - v.vec3(0, 0.3, 0);
-    const box_dist = sdf.box(box_pos, v.vec3(0.5, 0.5, 0.5));
-    const plane_dist = sdf.plane(p, v.vec3(0, 1, 0), 0.8);
-    return @min(box_dist, plane_dist);
-}
+/// Active scene — swap to `sdf.scene_difference` or `sdf.scene_pillars`
+/// for a different look.
+const scene = sdf.scene_blobs;
 
 pub fn main() !void {
     const size = terminal.getSize() catch terminal.Size{ .width = 80, .height = 24 };
@@ -42,7 +28,7 @@ pub fn main() !void {
     var fb = try terminal.createFrameBuffer(std.heap.page_allocator, width, height);
     defer terminal.destroyFrameBuffer(std.heap.page_allocator, fb);
 
-    render.renderFrame(&fb, sceneSphere, eye, fov, aspect);
+    render.renderFrame(&fb, scene, eye, fov, aspect);
 
     try terminal.clearScreen(out);
     try terminal.renderHalfBlock(fb, out);

@@ -41,6 +41,156 @@ pub fn cylinder(p: Vec3, radius: f32, half_height: f32) f32 {
     return outside + inside;
 }
 
+// ── Operations ─────────────────────────────────────────────────────────
+
+pub fn op_union(d1: f32, d2: f32) f32 {
+    return @min(d1, d2);
+}
+
+pub fn op_intersection(d1: f32, d2: f32) f32 {
+    return @max(d1, d2);
+}
+
+pub fn op_subtraction(d1: f32, d2: f32) f32 {
+    return @max(-d1, d2);
+}
+
+/// Polynomial smooth minimum for organic blending between two SDFs.
+pub fn op_smooth_union(d1: f32, d2: f32, k: f32) f32 {
+    const h = @max(k - @abs(d1 - d2), 0.0) / k;
+    return @min(d1, d2) - h * h * k * 0.25;
+}
+
+pub fn op_smooth_subtraction(d1: f32, d2: f32, k: f32) f32 {
+    const h = @max(k - @abs(-d1 - d2), 0.0) / k;
+    return @max(-d1, d2) + h * h * k * 0.25;
+}
+
+// ── Domain Transforms ──────────────────────────────────────────────────
+
+pub fn translate(p: Vec3, offset: Vec3) Vec3 {
+    return p - offset;
+}
+
+pub fn rotate_y(p: Vec3, angle: f32) Vec3 {
+    const c = @cos(angle);
+    const s = @sin(angle);
+    return vec3(c * p[0] + s * p[2], p[1], -s * p[0] + c * p[2]);
+}
+
+pub fn repeat(p: Vec3, spacing: f32) Vec3 {
+    const half = v.splat(spacing * 0.5);
+    return @mod(p + half, v.splat(spacing)) - half;
+}
+
+// ── Comptime Scene Composition ─────────────────────────────────────────
+//
+// Each helper captures comptime parameters via an inner struct namespace,
+// returning a `fn(Vec3) f32` that the compiler monomorphizes into the
+// ray marcher with zero runtime overhead.
+
+pub fn sphere_scene(comptime radius: f32) fn (Vec3) f32 {
+    return struct {
+        fn f(p: Vec3) f32 {
+            return sphere(p, radius);
+        }
+    }.f;
+}
+
+pub fn box_scene(comptime hx: f32, comptime hy: f32, comptime hz: f32) fn (Vec3) f32 {
+    return struct {
+        fn f(p: Vec3) f32 {
+            return box(p, vec3(hx, hy, hz));
+        }
+    }.f;
+}
+
+pub fn translated(comptime inner: fn (Vec3) f32, comptime offset: Vec3) fn (Vec3) f32 {
+    return struct {
+        fn f(p: Vec3) f32 {
+            return inner(translate(p, offset));
+        }
+    }.f;
+}
+
+pub fn rotated_y(comptime inner: fn (Vec3) f32, comptime angle: f32) fn (Vec3) f32 {
+    return struct {
+        fn f(p: Vec3) f32 {
+            return inner(rotate_y(p, angle));
+        }
+    }.f;
+}
+
+pub fn union_of(comptime a: fn (Vec3) f32, comptime b: fn (Vec3) f32) fn (Vec3) f32 {
+    return struct {
+        fn f(p: Vec3) f32 {
+            return op_union(a(p), b(p));
+        }
+    }.f;
+}
+
+pub fn smooth_union_of(comptime a: fn (Vec3) f32, comptime b: fn (Vec3) f32, comptime k: f32) fn (Vec3) f32 {
+    return struct {
+        fn f(p: Vec3) f32 {
+            return op_smooth_union(a(p), b(p), k);
+        }
+    }.f;
+}
+
+pub fn subtraction_of(comptime a: fn (Vec3) f32, comptime b: fn (Vec3) f32) fn (Vec3) f32 {
+    return struct {
+        fn f(p: Vec3) f32 {
+            return op_subtraction(a(p), b(p));
+        }
+    }.f;
+}
+
+pub fn repeated(comptime inner: fn (Vec3) f32, comptime spacing: f32) fn (Vec3) f32 {
+    return struct {
+        fn f(p: Vec3) f32 {
+            return inner(repeat(p, spacing));
+        }
+    }.f;
+}
+
+// ── Demo Scenes ────────────────────────────────────────────────────────
+
+/// Organic blobs: smooth union of several offset spheres.
+pub const scene_blobs = blk: {
+    const a = translated(sphere_scene(0.6), vec3(-0.5, 0.0, 0.0));
+    const b = translated(sphere_scene(0.5), vec3(0.5, 0.3, 0.0));
+    const c = translated(sphere_scene(0.55), vec3(0.0, -0.4, 0.4));
+    const d = translated(sphere_scene(0.45), vec3(0.2, 0.5, -0.3));
+    break :blk smooth_union_of(smooth_union_of(a, b, 0.5), smooth_union_of(c, d, 0.5), 0.5);
+};
+
+/// Hollow box: a sphere carved out of a rounded box.
+pub const scene_difference = subtraction_of(
+    sphere_scene(1.1),
+    box_scene(0.8, 0.8, 0.8),
+);
+
+/// Infinite grid of cylinders resting on a ground plane.
+pub const scene_pillars = blk: {
+    const pillar = repeated(
+        rotated_y(
+            struct {
+                fn f(p: Vec3) f32 {
+                    return cylinder(p, 0.2, 0.6);
+                }
+            }.f,
+            0.0,
+        ),
+        2.0,
+    );
+    const ground = struct {
+        fn f(p: Vec3) f32 {
+            return plane(p, vec3(0, 1, 0), 0.6);
+        }
+    }.f;
+    break :blk union_of(pillar, ground);
+};
+
 // ── Tests ───────────────────────────────────────────────────────────────
 
 const expectApproxEqAbs = std.testing.expectApproxEqAbs;
@@ -76,4 +226,40 @@ test "cylinder: on surface, inside, outside" {
     try expectApproxEqAbs(cylinder(vec3(1, 0, 0), 1.0, 1.0), 0.0, eps);
     try expectApproxEqAbs(cylinder(vec3(0, 0, 0), 1.0, 1.0), -1.0, eps);
     try expectApproxEqAbs(cylinder(vec3(2, 0, 0), 1.0, 1.0), 1.0, eps);
+}
+
+test "op_union: picks closer surface" {
+    try expectApproxEqAbs(op_union(1.0, 2.0), 1.0, eps);
+    try expectApproxEqAbs(op_union(-0.5, 0.3), -0.5, eps);
+}
+
+test "op_intersection: picks farther surface" {
+    try expectApproxEqAbs(op_intersection(1.0, 2.0), 2.0, eps);
+    try expectApproxEqAbs(op_intersection(-0.5, 0.3), 0.3, eps);
+}
+
+test "op_subtraction: carves first from second" {
+    // Outside both → second distance dominates.
+    try expectApproxEqAbs(op_subtraction(2.0, 1.0), 1.0, eps);
+    // Inside first, outside second → max(-d1, d2).
+    try expectApproxEqAbs(op_subtraction(-0.5, 0.3), 0.5, eps);
+}
+
+test "op_smooth_union: blends between surfaces" {
+    // With distant surfaces, smooth union matches hard union.
+    try expectApproxEqAbs(op_smooth_union(1.0, 5.0, 0.5), 1.0, eps);
+    // Smooth blend pulls the result below the hard minimum when surfaces overlap.
+    const smooth = op_smooth_union(0.3, 0.3, 1.0);
+    try std.testing.expect(smooth < 0.3);
+}
+
+test "comptime scene: scene_blobs evaluates without error" {
+    const d = scene_blobs(vec3(0, 0, 0));
+    try std.testing.expect(d < 0.0); // Origin is inside the blobs.
+}
+
+test "comptime scene: scene_difference carves sphere from box" {
+    // Center is inside box but also inside sphere, so subtraction removes it.
+    const d = scene_difference(vec3(0, 0, 0));
+    try std.testing.expect(d > 0.0);
 }
