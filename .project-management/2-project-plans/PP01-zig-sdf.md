@@ -1,7 +1,7 @@
 # PP01 - zig-sdf: Terminal SDF Renderer - Project Plan
 
 **Date:** 2026-02-08
-**Estimated Total Story Points:** 34
+**Estimated Total Story Points:** 36
 
 ---
 
@@ -36,12 +36,12 @@ SDFs are an elegant approach to 3D rendering that showcase Zig's unique strength
 
 ### Technology Choices
 
-- **Zig 0.14.x** (latest stable)
+- **Zig 0.15.x** (latest stable)
 - **`@Vector(3, f32)`** for SIMD vector math
 - **`comptime fn` parameters** for scene specialization
 - **`std.posix.tcsetattr`** for terminal raw mode
 - **`std.posix.poll`** for non-blocking input
-- **`std.io.bufferedWriter`** for efficient output
+- **`std.fs.File.stdout().writer(&buffer)`** for buffered output (0.15 I/O model — caller owns the buffer)
 
 ### Key Architectural Decisions
 
@@ -101,7 +101,7 @@ SDFs are an elegant approach to 3D rendering that showcase Zig's unique strength
 - **sdf.zig** — SDF primitive functions (sphere, box, torus, etc.), SDF operations (union, intersect, subtract, smooth blend), and comptime scene definitions that compose primitives + operations.
 - **render.zig** — Ray marching loop, normal estimation via gradient, lighting model (diffuse + specular + AO + soft shadows), per-pixel color computation.
 - **camera.zig** — Orbit camera: yaw, pitch, distance → generates ray origin + direction for each pixel via a `lookAt` matrix.
-- **terminal.zig** — Terminal raw mode setup/teardown, half-block character rendering, ANSI truecolor output, buffered writing, non-blocking key reading via `poll()`.
+- **terminal.zig** — Terminal raw mode setup/teardown, half-block character rendering, ANSI truecolor output, buffered writing via 0.15 `std.Io.Writer`, non-blocking key reading via `poll()`.
 
 ### File Structure
 
@@ -123,6 +123,40 @@ zig-sdf/
 ---
 
 ## Implementation Tickets
+
+### Ticket #0: Environment Setup + Dev Tooling
+
+**Story Points:** 2
+
+**Description:**
+Install Zig 0.15.x, set up the development environment, and configure pre-commit hooks. This ensures every subsequent ticket starts from a working, consistently-formatted codebase. First-time Zig setup on macOS.
+
+**Tasks:**
+- Install Zig 0.15.x via Homebrew or verify existing installation (`zig version`)
+- Install ZLS (Zig Language Server) via Homebrew (`brew install zls`)
+- Verify installation: `zig version` returns 0.15.x, `zls --version` matches
+- Configure editor for Zig (format-on-save with `zig fmt`, ZLS integration)
+- Add `.editorconfig` (4-space indentation, LF line endings — matches `zig fmt`)
+- Add `.githooks/pre-commit` hook running `zig fmt --check src/` and `zig build test`
+- Configure git to use `.githooks/` directory (`git config core.hooksPath .githooks`)
+- Verify `zig fmt` runs correctly on a test file
+- Create `src/` directory for subsequent tickets
+
+**Acceptance Criteria:**
+- [ ] `zig version` outputs 0.15.x
+- [ ] `zls --version` outputs a compatible version
+- [ ] Editor shows Zig syntax highlighting and autocomplete via ZLS
+- [ ] `.editorconfig` present with correct Zig settings
+- [ ] Pre-commit hook rejects unformatted code and failing tests
+- [ ] `git config core.hooksPath` returns `.githooks`
+
+**Dependencies:** None (first ticket)
+
+**Files:**
+- `.editorconfig` (new)
+- `.githooks/pre-commit` (new)
+
+---
 
 ### Ticket #1: Project Scaffolding + Vec3 Math
 
@@ -156,7 +190,7 @@ Set up the Zig project structure and implement the vec3 math module. This is the
 - [ ] Dot product, cross product, normalize produce correct results
 - [ ] Vec3 operations use `@Vector` SIMD builtins (not manual component access)
 
-**Dependencies:** None (foundational)
+**Dependencies:** Ticket #0
 
 **Files:**
 - `build.zig` (new)
@@ -188,7 +222,7 @@ Implement core SDF primitives and a basic ray marcher, then render a sphere to t
   - Get terminal size via TIOCGWINSZ ioctl
   - Simple ASCII brightness output (` .:-=+*#%@` gradient) — half-block comes later
   - Clear screen + home cursor (`\x1b[2J\x1b[H`)
-  - Buffered writer wrapping stdout
+  - Buffered writer via `std.fs.File.stdout().writer(&buffer)` (0.15 I/O model)
 - Wire it up in `main.zig`:
   - Fixed camera looking at origin
   - For each terminal cell, compute ray, march, map distance to brightness char
@@ -455,6 +489,9 @@ Add color to the world. Implement material colors per-object, create visually im
 ## Dependency Graph
 
 ```
+#0 Environment Setup + Dev Tooling
+ │
+ ▼
 #1 Scaffolding + Vec3
  │
  ▼
@@ -487,6 +524,7 @@ Each ticket produces a runnable program. Here's what you should see at each mile
 
 | After Ticket | What You See |
 |---|---|
+| #0 | `zig version` works, pre-commit hook rejects bad formatting |
 | #1 | `zig build test` passes, prints a vector |
 | #2 | A recognizable sphere shape in ASCII chars |
 | #3 | A 3D-looking sphere with light, shadow, and AO |
