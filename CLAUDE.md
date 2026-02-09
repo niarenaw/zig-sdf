@@ -6,7 +6,7 @@ A signed distance function (SDF) renderer in Zig that ray-marches 3D scenes and 
 
 ## What's Here
 
-Greenfield Zig 0.14.x project. Pure `std` library, zero external dependencies. Targets POSIX terminals (macOS/Linux).
+Greenfield Zig 0.15.x project. Pure `std` library, zero external dependencies. Targets POSIX terminals (macOS/Linux).
 
 ---
 
@@ -75,7 +75,7 @@ SDF scenes are `comptime fn(Vec3) f32` parameters passed to the ray marcher. The
 
 ### Terminal Output
 
-Each character cell encodes two vertical pixels using `▀` with separate fg (`\x1b[38;2;R;G;Bm`) and bg (`\x1b[48;2;R;G;Bm`) truecolor. All output goes through `std.io.bufferedWriter` and flushes once per frame.
+Each character cell encodes two vertical pixels using `▀` with separate fg (`\x1b[38;2;R;G;Bm`) and bg (`\x1b[48;2;R;G;Bm`) truecolor. All output goes through a caller-owned buffer via `std.fs.File.stdout().writer(&buffer)` (0.15 I/O model) and flushes once per frame.
 
 ### Terminal Safety
 
@@ -89,14 +89,16 @@ Raw mode must be restored on exit — always use `defer` for cleanup. Terminal s
 
 Before scanning the codebase, check `.project-management/` for existing plans and standards.
 
-### Zig 0.14 APIs
+### Zig 0.15 APIs
 
 | Operation | API |
 |-----------|-----|
 | Terminal raw mode | `std.posix.tcgetattr` / `std.posix.tcsetattr` |
 | Non-blocking input | `std.posix.poll` |
 | Terminal size | `std.posix.system.ioctl` with `std.posix.T.IOCGWINSZ` |
-| Buffered output | `std.io.bufferedWriter` |
+| Buffered output | `std.fs.File.stdout().writer(&buffer)` — caller owns the buffer |
+| Stdout handle | `std.fs.File.stdout()` (not `std.io.getStdOut()`) |
+| Build module | `b.createModule(...)` wrapping `root_source_file`, `target`, `optimize` |
 
 ---
 
