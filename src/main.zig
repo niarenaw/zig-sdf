@@ -1,27 +1,61 @@
 const std = @import("std");
 const v = @import("vec3.zig");
+const Vec3 = v.Vec3;
+const sdf = @import("sdf.zig");
+const render = @import("render.zig");
+const terminal = @import("terminal.zig");
+
+/// Scene SDF: a unit sphere at the origin.
+fn sceneSphere(p: Vec3) f32 {
+    return sdf.sphere(p, 1.0);
+}
+
+/// Scene SDF: a box at the origin (for testing shape swap).
+fn sceneBox(p: Vec3) f32 {
+    return sdf.box(p, v.vec3(0.8, 0.8, 0.8));
+}
 
 pub fn main() !void {
+    const size = terminal.getSize() catch terminal.Size{ .width = 80, .height = 24 };
+    const width: usize = size.width;
+    const height: usize = size.height;
+
     const stdout = std.fs.File.stdout();
-    var buf: [4096]u8 = undefined;
+    var buf: [1 << 16]u8 = undefined;
     var writer = stdout.writer(&buf);
     const out = &writer.interface;
 
-    const a = v.vec3(1.0, 2.0, 3.0);
-    const b = v.vec3(4.0, 5.0, 6.0);
-    const n = v.normalize(a);
+    // Fixed camera setup: eye at z=3 looking toward origin.
+    const eye = v.vec3(0, 0, 3.0);
+    const fov: f32 = 1.0;
+    // Terminal characters are roughly twice as tall as wide.
+    const aspect = @as(f32, @floatFromInt(width)) / @as(f32, @floatFromInt(height)) * 0.5;
 
-    try out.print("a         = ({d:.3}, {d:.3}, {d:.3})\n", .{ a[0], a[1], a[2] });
-    try out.print("b         = ({d:.3}, {d:.3}, {d:.3})\n", .{ b[0], b[1], b[2] });
-    try out.print("a + b     = ({d:.3}, {d:.3}, {d:.3})\n", .{ (a + b)[0], (a + b)[1], (a + b)[2] });
-    try out.print("dot(a, b) = {d:.3}\n", .{v.dot(a, b)});
-    try out.print("cross     = ({d:.3}, {d:.3}, {d:.3})\n", .{ v.cross(a, b)[0], v.cross(a, b)[1], v.cross(a, b)[2] });
-    try out.print("len(a)    = {d:.3}\n", .{v.length(a)});
-    try out.print("norm(a)   = ({d:.3}, {d:.3}, {d:.3})\n", .{ n[0], n[1], n[2] });
+    try terminal.clearScreen(out);
+
+    for (0..height) |row| {
+        for (0..width) |col| {
+            // Map pixel to normalized screen coords (-1..1).
+            const u = (@as(f32, @floatFromInt(col)) / @as(f32, @floatFromInt(width)) * 2.0 - 1.0) * aspect;
+            const vv = -(@as(f32, @floatFromInt(row)) / @as(f32, @floatFromInt(height)) * 2.0 - 1.0);
+
+            const dir = v.normalize(v.vec3(u * fov, vv * fov, -1.0));
+
+            if (render.march(eye, dir, sceneSphere)) |hit| {
+                // Simple depth-based shading: closer = brighter.
+                const brightness = 1.0 - @min(hit.dist / 5.0, 1.0);
+                try out.writeByte(terminal.brightnessChar(brightness));
+            } else {
+                try out.writeByte(' ');
+            }
+        }
+        try out.writeByte('\n');
+    }
 
     try out.flush();
 }
 
 test {
     _ = @import("vec3.zig");
+    _ = @import("sdf.zig");
 }
