@@ -68,3 +68,61 @@ pub fn resetColors(writer: *std.Io.Writer) !void {
 pub fn clearScreen(writer: *std.Io.Writer) !void {
     try writer.writeAll("\x1b[2J\x1b[H");
 }
+
+// ── FrameBuffer ────────────────────────────────────────────────────────
+
+pub const FrameBuffer = struct {
+    pixels: []Color,
+    width: usize,
+    pixel_height: usize,
+};
+
+const bg_black = Color{ .r = 0, .g = 0, .b = 0 };
+
+pub fn createFrameBuffer(allocator: std.mem.Allocator, width: usize, term_height: usize) !FrameBuffer {
+    const pixel_height = term_height * 2;
+    const pixels = try allocator.alloc(Color, width * pixel_height);
+    @memset(pixels, bg_black);
+    return .{ .pixels = pixels, .width = width, .pixel_height = pixel_height };
+}
+
+pub fn destroyFrameBuffer(allocator: std.mem.Allocator, fb: FrameBuffer) void {
+    allocator.free(fb.pixels);
+}
+
+pub fn setPixel(fb: *FrameBuffer, x: usize, y: usize, color: Color) void {
+    fb.pixels[y * fb.width + x] = color;
+}
+
+pub fn getPixel(fb: FrameBuffer, x: usize, y: usize) Color {
+    return fb.pixels[y * fb.width + x];
+}
+
+/// Render the framebuffer using half-block characters. Each terminal row
+/// encodes two pixel rows: the top pixel as the foreground color and the
+/// bottom pixel as the background color of the `▀` character.
+pub fn renderHalfBlock(fb: FrameBuffer, writer: *std.Io.Writer) !void {
+    var y: usize = 0;
+    while (y < fb.pixel_height) : (y += 2) {
+        const has_bottom = (y + 1) < fb.pixel_height;
+        for (0..fb.width) |x| {
+            const top = getPixel(fb, x, y);
+            const bot = if (has_bottom) getPixel(fb, x, y + 1) else bg_black;
+
+            try writeFgBgColor(writer, top, bot);
+            try writer.writeAll("▀");
+        }
+        try resetColors(writer);
+        try writer.writeByte('\n');
+    }
+}
+
+/// Write combined fg + bg truecolor escape in a single sequence.
+fn writeFgBgColor(writer: *std.Io.Writer, fg: Color, bg: Color) !void {
+    var buf: [64]u8 = undefined;
+    const seq = try std.fmt.bufPrint(&buf, "\x1b[38;2;{d};{d};{d};48;2;{d};{d};{d}m", .{
+        fg.r, fg.g, fg.b,
+        bg.r, bg.g, bg.b,
+    });
+    try writer.writeAll(seq);
+}

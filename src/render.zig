@@ -1,6 +1,7 @@
 const std = @import("std");
 const v = @import("vec3.zig");
 const Vec3 = v.Vec3;
+const terminal = @import("terminal.zig");
 
 const max_steps: usize = 64;
 const max_dist: f32 = 100.0;
@@ -105,4 +106,32 @@ pub fn shade(pos: Vec3, normal: Vec3, view_dir: Vec3, comptime sdf: fn (Vec3) f3
     // Combine terms.
     const lighting = ambient + (diffuse + specular) * shadow * ao;
     return @min(1.0, lighting);
+}
+
+/// Render the scene into a framebuffer, decoupling ray marching from output.
+pub fn renderFrame(
+    fb: *terminal.FrameBuffer,
+    comptime sdf_fn: fn (Vec3) f32,
+    eye: Vec3,
+    fov: f32,
+    aspect: f32,
+) void {
+    const fw: f32 = @floatFromInt(fb.width);
+    const fh: f32 = @floatFromInt(fb.pixel_height);
+
+    for (0..fb.pixel_height) |y| {
+        for (0..fb.width) |x| {
+            const u = (@as(f32, @floatFromInt(x)) / fw * 2.0 - 1.0) * aspect;
+            const vv = -((@as(f32, @floatFromInt(y)) / fh) * 2.0 - 1.0);
+            const dir = v.normalize(v.vec3(u * fov, vv * fov, -1.0));
+
+            if (march(eye, dir, sdf_fn)) |hit| {
+                const normal = estimateNormal(hit.pos, sdf_fn);
+                const view_dir = v.normalize(eye - hit.pos);
+                const brightness = shade(hit.pos, normal, view_dir, sdf_fn);
+                terminal.setPixel(fb, x, y, terminal.brightnessToColor(brightness));
+            }
+            // Missed pixels stay at default black from createFrameBuffer.
+        }
+    }
 }

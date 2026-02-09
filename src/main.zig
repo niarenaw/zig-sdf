@@ -33,38 +33,19 @@ pub fn main() !void {
     var writer = stdout.writer(&buf);
     const out = &writer.interface;
 
-    // Fixed camera setup: eye at z=3 looking toward origin.
     const eye = v.vec3(0, 0, 3.0);
     const fov: f32 = 1.0;
-    // Terminal characters are roughly twice as tall as wide.
-    const aspect = @as(f32, @floatFromInt(width)) / @as(f32, @floatFromInt(height)) * 0.5;
+    // Aspect is based on pixel dimensions: width / (height * 2) since
+    // half-block rendering doubles vertical resolution.
+    const aspect = @as(f32, @floatFromInt(width)) / @as(f32, @floatFromInt(height * 2));
+
+    var fb = try terminal.createFrameBuffer(std.heap.page_allocator, width, height);
+    defer terminal.destroyFrameBuffer(std.heap.page_allocator, fb);
+
+    render.renderFrame(&fb, sceneSphere, eye, fov, aspect);
 
     try terminal.clearScreen(out);
-
-    for (0..height) |row| {
-        for (0..width) |col| {
-            // Map pixel to normalized screen coords (-1..1).
-            const u = (@as(f32, @floatFromInt(col)) / @as(f32, @floatFromInt(width)) * 2.0 - 1.0) * aspect;
-            const vv = -(@as(f32, @floatFromInt(row)) / @as(f32, @floatFromInt(height)) * 2.0 - 1.0);
-
-            const dir = v.normalize(v.vec3(u * fov, vv * fov, -1.0));
-
-            if (render.march(eye, dir, sceneSphere)) |hit| {
-                const normal = render.estimateNormal(hit.pos, sceneSphere);
-                const view_dir = v.normalize(eye - hit.pos);
-                const brightness = render.shade(hit.pos, normal, view_dir, sceneSphere);
-
-                const color = terminal.brightnessToColor(brightness);
-                try terminal.writeFgColor(out, color);
-                try out.writeByte('#');
-            } else {
-                try out.writeByte(' ');
-            }
-        }
-        try terminal.resetColors(out);
-        try out.writeByte('\n');
-    }
-
+    try terminal.renderHalfBlock(fb, out);
     try out.flush();
 }
 
