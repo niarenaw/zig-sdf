@@ -90,6 +90,10 @@ pub fn destroyFrameBuffer(allocator: std.mem.Allocator, fb: FrameBuffer) void {
     allocator.free(fb.pixels);
 }
 
+pub fn clearFrameBuffer(fb: *FrameBuffer) void {
+    @memset(fb.pixels, bg_black);
+}
+
 pub fn setPixel(fb: *FrameBuffer, x: usize, y: usize, color: Color) void {
     fb.pixels[y * fb.width + x] = color;
 }
@@ -125,4 +129,83 @@ fn writeFgBgColor(writer: *std.Io.Writer, fg: Color, bg: Color) !void {
         bg.r, bg.g, bg.b,
     });
     try writer.writeAll(seq);
+}
+
+// ── Raw Mode & Input ───────────────────────────────────────────────────
+
+/// Enter raw mode, returning the original termios to restore later.
+pub fn enterRawMode() !std.posix.termios {
+    const fd = std.fs.File.stdin().handle;
+    const old = try std.posix.tcgetattr(fd);
+
+    var raw = old;
+    // Disable canonical mode, echo, signals, and extended processing.
+    raw.iflag.ICRNL = false;
+    raw.iflag.IXON = false;
+    raw.lflag.ICANON = false;
+    raw.lflag.ECHO = false;
+    raw.lflag.ISIG = false;
+    raw.lflag.IEXTEN = false;
+    // Read returns immediately with whatever is available.
+    raw.cc[@intFromEnum(std.posix.V.MIN)] = 0;
+    raw.cc[@intFromEnum(std.posix.V.TIME)] = 0;
+
+    try std.posix.tcsetattr(fd, .FLUSH, raw);
+    return old;
+}
+
+pub fn exitRawMode(old: std.posix.termios) void {
+    const fd = std.fs.File.stdin().handle;
+    std.posix.tcsetattr(fd, .FLUSH, old) catch {};
+}
+
+pub fn hideCursor(writer: *std.Io.Writer) !void {
+    try writer.writeAll("\x1b[?25l");
+}
+
+pub fn showCursor(writer: *std.Io.Writer) !void {
+    try writer.writeAll("\x1b[?25h");
+}
+
+/// Move cursor to home position without clearing the screen.
+pub fn cursorHome(writer: *std.Io.Writer) !void {
+    try writer.writeAll("\x1b[H");
+}
+
+pub const Key = enum { up, down, left, right, plus, minus, tab, q, other };
+
+/// Poll stdin for a keypress with the given timeout in milliseconds.
+/// Returns null if no key is available within the timeout.
+pub fn pollKey(timeout_ms: i32) ?Key {
+    const fd = std.fs.File.stdin().handle;
+    var fds = [_]std.posix.pollfd{.{
+        .fd = fd,
+        .events = std.posix.POLL.IN,
+        .revents = undefined,
+    }};
+    const ready = std.posix.poll(&fds, timeout_ms) catch return null;
+    if (ready == 0) return null;
+
+    var buf: [8]u8 = undefined;
+    const n = std.posix.read(fd, &buf) catch return null;
+    if (n == 0) return null;
+
+    // Escape sequence: \x1b [ X
+    if (n >= 3 and buf[0] == 0x1b and buf[1] == '[') {
+        return switch (buf[2]) {
+            'A' => .up,
+            'B' => .down,
+            'C' => .right,
+            'D' => .left,
+            else => .other,
+        };
+    }
+
+    return switch (buf[0]) {
+        'q' => .q,
+        '+', '=' => .plus,
+        '-', '_' => .minus,
+        '\t' => .tab,
+        else => .other,
+    };
 }
