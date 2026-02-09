@@ -81,7 +81,7 @@ pub fn calcSoftShadow(pos: Vec3, light_dir: Vec3, comptime sdf: fn (Vec3) f32) f
     return @max(0.0, @min(1.0, res));
 }
 
-/// Compute lighting for a surface point.
+/// Compute lighting for a surface point, returning a scalar brightness.
 pub fn shade(pos: Vec3, normal: Vec3, view_dir: Vec3, comptime sdf: fn (Vec3) f32) f32 {
     const light_pos = v.vec3(3.0, 4.0, 2.0);
     const light_dir = v.normalize(light_pos - pos);
@@ -109,10 +109,21 @@ pub fn shade(pos: Vec3, normal: Vec3, view_dir: Vec3, comptime sdf: fn (Vec3) f3
     return @min(1.0, lighting);
 }
 
-/// Render the scene into a framebuffer using the orbit camera.
-pub fn renderFrame(
+/// Convert a Vec3 color (0..1 per channel) to a terminal Color (0..255).
+fn vec3ToColor(c: Vec3) terminal.Color {
+    const clamped = @min(@max(c, v.splat(0.0)), v.splat(1.0));
+    return .{
+        .r = @intFromFloat(clamped[0] * 255.0),
+        .g = @intFromFloat(clamped[1] * 255.0),
+        .b = @intFromFloat(clamped[2] * 255.0),
+    };
+}
+
+/// Render the scene into a framebuffer with per-pixel material color.
+pub fn renderFrameColor(
     fb: *terminal.FrameBuffer,
     comptime sdf_fn: fn (Vec3) f32,
+    comptime color_fn: fn (Vec3) Vec3,
     camera: cam.Camera,
 ) void {
     const fw: f32 = @floatFromInt(fb.width);
@@ -129,9 +140,9 @@ pub fn renderFrame(
                 const normal = estimateNormal(hit.pos, sdf_fn);
                 const view_dir = v.normalize(ray.origin - hit.pos);
                 const brightness = shade(hit.pos, normal, view_dir, sdf_fn);
-                terminal.setPixel(fb, x, y, terminal.brightnessToColor(brightness));
+                const material = color_fn(hit.pos);
+                terminal.setPixel(fb, x, y, vec3ToColor(material * v.splat(brightness)));
             }
-            // Missed pixels stay at default black from createFrameBuffer.
         }
     }
 }

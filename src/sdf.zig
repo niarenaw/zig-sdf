@@ -153,6 +153,39 @@ pub fn repeated(comptime inner: fn (Vec3) f32, comptime spacing: f32) fn (Vec3) 
     }.f;
 }
 
+// ── Color Palettes ─────────────────────────────────────────────────────
+
+/// Classic cosine palette: a + b * cos(2π(c*t + d)).
+pub fn cosinePalette(t: f32, a: Vec3, b: Vec3, c: Vec3, d: Vec3) Vec3 {
+    const tau = std.math.pi * 2.0;
+    const phase = c * v.splat(t) + d;
+    return a + b * vec3(@cos(phase[0] * tau), @cos(phase[1] * tau), @cos(phase[2] * tau));
+}
+
+pub const palette_sunset = struct {
+    pub fn eval(t: f32) Vec3 {
+        return cosinePalette(t, vec3(0.5, 0.5, 0.5), vec3(0.5, 0.5, 0.5), vec3(1.0, 0.7, 0.4), vec3(0.0, 0.15, 0.20));
+    }
+};
+
+pub const palette_ocean = struct {
+    pub fn eval(t: f32) Vec3 {
+        return cosinePalette(t, vec3(0.5, 0.5, 0.5), vec3(0.5, 0.5, 0.5), vec3(1.0, 1.0, 1.0), vec3(0.0, 0.10, 0.20));
+    }
+};
+
+pub const palette_neon = struct {
+    pub fn eval(t: f32) Vec3 {
+        return cosinePalette(t, vec3(0.5, 0.5, 0.5), vec3(0.5, 0.5, 0.5), vec3(2.0, 1.0, 0.0), vec3(0.5, 0.2, 0.25));
+    }
+};
+
+pub const palette_rainbow = struct {
+    pub fn eval(t: f32) Vec3 {
+        return cosinePalette(t, vec3(0.5, 0.5, 0.5), vec3(0.5, 0.5, 0.5), vec3(1.0, 1.0, 1.0), vec3(0.0, 0.33, 0.67));
+    }
+};
+
 // ── Demo Scenes ────────────────────────────────────────────────────────
 
 /// Organic blobs: smooth union of several offset spheres.
@@ -190,6 +223,73 @@ pub const scene_pillars = blk: {
     }.f;
     break :blk union_of(pillar, ground);
 };
+
+/// Simple smooth sphere for a gentle intro.
+pub const scene_hello = sphere_scene(1.0);
+
+/// Geometric crystal: intersections and subtractions of boxes and spheres.
+pub const scene_crystal = blk: {
+    const outer = box_scene(0.9, 0.9, 0.9);
+    const cut_x = translated(sphere_scene(1.2), vec3(0.7, 0.0, 0.0));
+    const cut_y = translated(sphere_scene(1.2), vec3(0.0, 0.7, 0.0));
+    const cut_z = translated(sphere_scene(1.2), vec3(0.0, 0.0, 0.7));
+    const step1 = subtraction_of(cut_x, outer);
+    const step2 = subtraction_of(cut_y, step1);
+    break :blk subtraction_of(cut_z, step2);
+};
+
+/// Nested tori at perpendicular angles.
+pub const scene_rings = blk: {
+    const ring_xz = struct {
+        fn f(p: Vec3) f32 {
+            return torus(p, 1.0, 0.15);
+        }
+    }.f;
+    const ring_yz = struct {
+        fn f(p: Vec3) f32 {
+            return torus(rotate_y(p, std.math.pi / 2.0), 1.0, 0.15);
+        }
+    }.f;
+    const ring_tilted = struct {
+        fn f(p: Vec3) f32 {
+            return torus(rotate_y(p, std.math.pi / 4.0), 1.0, 0.15);
+        }
+    }.f;
+    break :blk union_of(union_of(ring_xz, ring_yz), ring_tilted);
+};
+
+// ── Scene Color Functions ──────────────────────────────────────────────
+
+pub fn color_hello(p: Vec3) Vec3 {
+    const t = (p[1] + 1.0) * 0.5;
+    return palette_sunset.eval(t);
+}
+
+pub fn color_blobs(p: Vec3) Vec3 {
+    const t = v.length(p) * 0.5;
+    return palette_sunset.eval(t);
+}
+
+pub fn color_difference(p: Vec3) Vec3 {
+    const t = @abs(p[0]) + @abs(p[2]);
+    return palette_ocean.eval(t * 0.3);
+}
+
+pub fn color_pillars(p: Vec3) Vec3 {
+    const t = @mod(@abs(p[0]) + @abs(p[2]), 2.0) * 0.5;
+    return v.mix(vec3(0.6, 0.55, 0.5), vec3(0.85, 0.8, 0.7), t);
+}
+
+pub fn color_crystal(p: Vec3) Vec3 {
+    const t = @abs(p[0]) + @abs(p[1]) + @abs(p[2]);
+    return palette_neon.eval(t * 0.3);
+}
+
+pub fn color_rings(p: Vec3) Vec3 {
+    const angle = std.math.atan2(p[2], p[0]);
+    const t = (angle / std.math.pi + 1.0) * 0.5;
+    return palette_rainbow.eval(t);
+}
 
 // ── Tests ───────────────────────────────────────────────────────────────
 
