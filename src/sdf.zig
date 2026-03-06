@@ -34,7 +34,7 @@ pub fn torus(p: Vec3, radius_major: f32, radius_minor: f32) f32 {
 /// Signed distance to a capped cylinder along the y-axis, centered at the origin.
 pub fn cylinder(p: Vec3, radius: f32, half_height: f32) f32 {
     const xz_len = @sqrt(p[0] * p[0] + p[2] * p[2]);
-    const d_x = @abs(xz_len) - radius;
+    const d_x = xz_len - radius;
     const d_y = @abs(p[1]) - half_height;
     const outside = @sqrt(@max(d_x, 0.0) * @max(d_x, 0.0) + @max(d_y, 0.0) * @max(d_y, 0.0));
     const inside = @min(@max(d_x, d_y), @as(f32, 0.0));
@@ -97,10 +97,10 @@ pub fn sphere_scene(comptime radius: f32) fn (Vec3) f32 {
     }.f;
 }
 
-pub fn box_scene(comptime hx: f32, comptime hy: f32, comptime hz: f32) fn (Vec3) f32 {
+pub fn box_scene(comptime half_extents: Vec3) fn (Vec3) f32 {
     return struct {
         fn f(p: Vec3) f32 {
-            return box(p, vec3(hx, hy, hz));
+            return box(p, half_extents);
         }
     }.f;
 }
@@ -155,36 +155,24 @@ pub fn repeated(comptime inner: fn (Vec3) f32, comptime spacing: f32) fn (Vec3) 
 
 // ── Color Palettes ─────────────────────────────────────────────────────
 
-/// Classic cosine palette: a + b * cos(2π(c*t + d)).
-pub fn cosinePalette(t: f32, a: Vec3, b: Vec3, c: Vec3, d: Vec3) Vec3 {
-    const tau = std.math.pi * 2.0;
-    const phase = c * v.splat(t) + d;
-    return a + b * vec3(@cos(phase[0] * tau), @cos(phase[1] * tau), @cos(phase[2] * tau));
-}
+/// Cosine palette parameterized by four Vec3 coefficients: a + b * cos(2π(c*t + d)).
+pub const Palette = struct {
+    a: Vec3,
+    b: Vec3,
+    c: Vec3,
+    d: Vec3,
 
-pub const palette_sunset = struct {
-    pub fn eval(t: f32) Vec3 {
-        return cosinePalette(t, vec3(0.5, 0.5, 0.5), vec3(0.5, 0.5, 0.5), vec3(1.0, 0.7, 0.4), vec3(0.0, 0.15, 0.20));
+    pub fn eval(self: Palette, t: f32) Vec3 {
+        const tau = std.math.pi * 2.0;
+        const phase = self.c * v.splat(t) + self.d;
+        return self.a + self.b * vec3(@cos(phase[0] * tau), @cos(phase[1] * tau), @cos(phase[2] * tau));
     }
 };
 
-pub const palette_ocean = struct {
-    pub fn eval(t: f32) Vec3 {
-        return cosinePalette(t, vec3(0.5, 0.5, 0.5), vec3(0.5, 0.5, 0.5), vec3(1.0, 1.0, 1.0), vec3(0.0, 0.10, 0.20));
-    }
-};
-
-pub const palette_neon = struct {
-    pub fn eval(t: f32) Vec3 {
-        return cosinePalette(t, vec3(0.5, 0.5, 0.5), vec3(0.5, 0.5, 0.5), vec3(2.0, 1.0, 0.0), vec3(0.5, 0.2, 0.25));
-    }
-};
-
-pub const palette_rainbow = struct {
-    pub fn eval(t: f32) Vec3 {
-        return cosinePalette(t, vec3(0.5, 0.5, 0.5), vec3(0.5, 0.5, 0.5), vec3(1.0, 1.0, 1.0), vec3(0.0, 0.33, 0.67));
-    }
-};
+pub const palette_sunset = Palette{ .a = vec3(0.5, 0.5, 0.5), .b = vec3(0.5, 0.5, 0.5), .c = vec3(1.0, 0.7, 0.4), .d = vec3(0.0, 0.15, 0.20) };
+pub const palette_ocean = Palette{ .a = vec3(0.5, 0.5, 0.5), .b = vec3(0.5, 0.5, 0.5), .c = vec3(1.0, 1.0, 1.0), .d = vec3(0.0, 0.10, 0.20) };
+pub const palette_neon = Palette{ .a = vec3(0.5, 0.5, 0.5), .b = vec3(0.5, 0.5, 0.5), .c = vec3(2.0, 1.0, 0.0), .d = vec3(0.5, 0.2, 0.25) };
+pub const palette_rainbow = Palette{ .a = vec3(0.5, 0.5, 0.5), .b = vec3(0.5, 0.5, 0.5), .c = vec3(1.0, 1.0, 1.0), .d = vec3(0.0, 0.33, 0.67) };
 
 // ── Demo Scenes ────────────────────────────────────────────────────────
 
@@ -200,20 +188,17 @@ pub const scene_blobs = blk: {
 /// Hollow box: a sphere carved out of a rounded box.
 pub const scene_difference = subtraction_of(
     sphere_scene(1.1),
-    box_scene(0.8, 0.8, 0.8),
+    box_scene(vec3(0.8, 0.8, 0.8)),
 );
 
 /// Infinite grid of cylinders resting on a ground plane.
 pub const scene_pillars = blk: {
     const pillar = repeated(
-        rotated_y(
-            struct {
-                fn f(p: Vec3) f32 {
-                    return cylinder(p, 0.2, 0.6);
-                }
-            }.f,
-            0.0,
-        ),
+        struct {
+            fn f(p: Vec3) f32 {
+                return cylinder(p, 0.2, 0.6);
+            }
+        }.f,
         2.0,
     );
     const ground = struct {
@@ -229,7 +214,7 @@ pub const scene_hello = sphere_scene(1.0);
 
 /// Geometric crystal: intersections and subtractions of boxes and spheres.
 pub const scene_crystal = blk: {
-    const outer = box_scene(0.9, 0.9, 0.9);
+    const outer = box_scene(vec3(0.9, 0.9, 0.9));
     const cut_x = translated(sphere_scene(1.2), vec3(0.7, 0.0, 0.0));
     const cut_y = translated(sphere_scene(1.2), vec3(0.0, 0.7, 0.0));
     const cut_z = translated(sphere_scene(1.2), vec3(0.0, 0.0, 0.7));

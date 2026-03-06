@@ -67,7 +67,8 @@ pub fn calcSoftShadow(pos: Vec3, light_dir: Vec3, comptime sdf: fn (Vec3) f32) f
     var t: f32 = 0.02; // Start slightly offset to avoid self-intersection.
     var res: f32 = 1.0;
 
-    while (t < max_t) {
+    for (0..max_steps) |_| {
+        if (t >= max_t) break;
         const p = pos + v.splat(t) * light_dir;
         const d = sdf(p);
         if (d < surface_eps) {
@@ -75,7 +76,7 @@ pub fn calcSoftShadow(pos: Vec3, light_dir: Vec3, comptime sdf: fn (Vec3) f32) f
         }
         // Accumulate penumbra.
         res = @min(res, softness * d / t);
-        t += d;
+        t += @max(d, surface_eps);
     }
 
     return @max(0.0, @min(1.0, res));
@@ -130,18 +131,33 @@ pub fn renderFrameColor(
     const fh: f32 = @floatFromInt(fb.pixel_height);
     const aspect = fw / fh;
 
+    // Hoist camera setup out of the pixel loop — eye position and view
+    // matrix are constant for the entire frame.
+    const eye = cam.eyePosition(camera);
+    const mat = cam.lookAt(eye, camera.target, v.vec3(0, 1, 0));
+    const fov_aspect = camera.fov * aspect;
+    const bg = terminal.Color{ .r = 0, .g = 0, .b = 0 };
+
     for (0..fb.pixel_height) |y| {
         for (0..fb.width) |x| {
             const u = @as(f32, @floatFromInt(x)) / fw * 2.0 - 1.0;
             const vv = -(@as(f32, @floatFromInt(y)) / fh * 2.0 - 1.0);
-            const ray = cam.getRay(camera, u, vv, aspect);
 
-            if (march(ray.origin, ray.dir, sdf_fn)) |hit| {
+            const dir_local = v.vec3(u * fov_aspect, vv * camera.fov, 1.0);
+            const dir = v.normalize(
+                mat.right * v.splat(dir_local[0]) +
+                    mat.up * v.splat(dir_local[1]) +
+                    mat.forward * v.splat(dir_local[2]),
+            );
+
+            if (march(eye, dir, sdf_fn)) |hit| {
                 const normal = estimateNormal(hit.pos, sdf_fn);
-                const view_dir = v.normalize(ray.origin - hit.pos);
+                const view_dir = v.normalize(eye - hit.pos);
                 const brightness = shade(hit.pos, normal, view_dir, sdf_fn);
                 const material = color_fn(hit.pos);
                 terminal.setPixel(fb, x, y, vec3ToColor(material * v.splat(brightness)));
+            } else {
+                terminal.setPixel(fb, x, y, bg);
             }
         }
     }

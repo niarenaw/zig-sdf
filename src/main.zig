@@ -147,7 +147,6 @@ pub fn main() !void {
             }
         }
 
-        terminal.clearFrameBuffer(&fb);
         renderScene(&fb, current_scene, camera);
 
         try terminal.cursorHome(out);

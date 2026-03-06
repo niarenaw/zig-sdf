@@ -64,7 +64,7 @@ const expect = std.testing.expect;
 const expectApproxEqAbs = std.testing.expectApproxEqAbs;
 const eps = 1e-6;
 
-fn expectVec3Approx(actual: Vec3, expected: Vec3) !void {
+pub fn expectVec3Approx(actual: Vec3, expected: Vec3) !void {
     try expectApproxEqAbs(actual[0], expected[0], eps);
     try expectApproxEqAbs(actual[1], expected[1], eps);
     try expectApproxEqAbs(actual[2], expected[2], eps);

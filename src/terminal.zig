@@ -23,42 +23,6 @@ pub fn getSize() !Size {
     return .{ .width = ws.col, .height = ws.row };
 }
 
-/// ASCII brightness ramp from dark to light.
-const brightness_ramp = " .:-=+*#%@";
-
-/// Map a 0..1 brightness value to an ASCII character.
-pub fn brightnessChar(t: f32) u8 {
-    const clamped = @max(0.0, @min(1.0, t));
-    const idx: usize = @intFromFloat(clamped * @as(f32, @floatFromInt(brightness_ramp.len - 1)));
-    return brightness_ramp[idx];
-}
-
-/// Convert brightness (0..1) to a warm orange gradient color.
-pub fn brightnessToColor(brightness: f32) Color {
-    const clamped = @max(0.0, @min(1.0, brightness));
-
-    // Warm orange gradient: dark brown -> orange -> bright yellow-white.
-    const r = @as(u8, @intFromFloat(20.0 + clamped * 235.0));
-    const g = @as(u8, @intFromFloat(10.0 + clamped * 180.0));
-    const b = @as(u8, @intFromFloat(5.0 + clamped * 80.0));
-
-    return .{ .r = r, .g = g, .b = b };
-}
-
-/// Write truecolor ANSI escape sequence for foreground color.
-pub fn writeFgColor(writer: *std.Io.Writer, color: Color) !void {
-    var buf: [32]u8 = undefined;
-    const seq = try std.fmt.bufPrint(&buf, "\x1b[38;2;{d};{d};{d}m", .{ color.r, color.g, color.b });
-    try writer.writeAll(seq);
-}
-
-/// Write truecolor ANSI escape sequence for background color.
-pub fn writeBgColor(writer: *std.Io.Writer, color: Color) !void {
-    var buf: [32]u8 = undefined;
-    const seq = try std.fmt.bufPrint(&buf, "\x1b[48;2;{d};{d};{d}m", .{ color.r, color.g, color.b });
-    try writer.writeAll(seq);
-}
-
 /// Reset terminal colors to default.
 pub fn resetColors(writer: *std.Io.Writer) !void {
     try writer.writeAll("\x1b[0m");
@@ -88,10 +52,6 @@ pub fn createFrameBuffer(allocator: std.mem.Allocator, width: usize, term_height
 
 pub fn destroyFrameBuffer(allocator: std.mem.Allocator, fb: FrameBuffer) void {
     allocator.free(fb.pixels);
-}
-
-pub fn clearFrameBuffer(fb: *FrameBuffer) void {
-    @memset(fb.pixels, bg_black);
 }
 
 pub fn setPixel(fb: *FrameBuffer, x: usize, y: usize, color: Color) void {
