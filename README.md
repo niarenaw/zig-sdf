@@ -1,6 +1,6 @@
 # zig-sdf
 
-A real-time signed distance function (SDF) renderer that runs entirely in the terminal. Built in Zig to showcase comptime metaprogramming — scenes are composed from SDF primitives at compile time and monomorphized into the ray marcher with zero runtime overhead.
+A real-time signed distance function (SDF) renderer that runs entirely in the terminal. Built in Zig to showcase comptime metaprogramming - scenes are composed from SDF primitives at compile time and monomorphized into the ray marcher with zero runtime overhead.
 
 ```
    ╔══════════════════════════════════╗
@@ -15,12 +15,12 @@ A real-time signed distance function (SDF) renderer that runs entirely in the te
 
 ## Features
 
-- **Comptime scene composition** — SDF primitives, boolean operations, and domain transforms compose at compile time via Zig's comptime function pointers
-- **Full lighting model** — Blinn-Phong shading with ambient occlusion and soft shadows
-- **Half-block rendering** — Unicode `▀` characters with truecolor fg/bg encode two pixel rows per terminal row
-- **Cosine color palettes** — Per-scene material colors using Inigo Quilez's cosine palette technique
-- **Interactive camera** — Orbit camera with keyboard controls for rotation and zoom
-- **6 demo scenes** — From simple spheres to interlocking tori
+- **Comptime scene composition** - SDF primitives, boolean operations, and domain transforms compose at compile time via Zig's comptime function pointers
+- **Full lighting model** - Blinn-Phong shading with ambient occlusion and soft shadows
+- **Half-block rendering** - Unicode `▀` characters with truecolor fg/bg encode two pixel rows per terminal row
+- **Cosine color palettes** - Per-scene material colors using Inigo Quilez's cosine palette technique
+- **Interactive camera** - Orbit camera with keyboard controls for rotation and zoom
+- **6 demo scenes** - From simple spheres to interlocking tori
 
 ## Requirements
 
@@ -103,7 +103,7 @@ zig build run -- --scene crystal
 
 ### Comptime Scene Composition
 
-Scenes are built by composing SDF functions at compile time. The compiler monomorphizes each scene into a dedicated ray march loop — no function pointers or vtables at runtime.
+Scenes are built by composing SDF functions at compile time. The compiler monomorphizes each scene into a dedicated ray march loop - no function pointers or vtables at runtime.
 
 ```zig
 // Compose a scene from primitives and operations
@@ -113,7 +113,7 @@ pub const scene_blobs = blk: {
     break :blk smooth_union_of(a, b, 0.5);
 };
 
-// Each scene is fn(Vec3) f32 — evaluated millions of times per frame
+// Each scene is fn(Vec3) f32 - evaluated millions of times per frame
 ```
 
 Runtime scene switching uses an enum + switch, where each branch calls `renderFrameColor` with a different comptime scene:
